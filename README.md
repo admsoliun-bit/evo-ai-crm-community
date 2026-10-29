@@ -259,7 +259,18 @@ docker-compose up
 
 # Specific services
 docker-compose up backend worker
+
+## Frontend (Vite dev server)
+Clone o frontend em `C:\Users\Usuario\Documents\GitHub\evo-ai-frontend-community`.
+No diretório do frontend:
+
+```bash
+npm install -g pnpm@10
+pnpm install
+pnpm dev -- --host 0.0.0.0 --port 5173
 ```
+Acesse http://localhost:5173
+
 
 ---
 

@@ -57,9 +57,10 @@ ENV PATH="$PNPM_HOME:$PATH"
 WORKDIR /app
 
 COPY Gemfile Gemfile.lock ./
-# CI-only path-gem referenced by Gemfile.lock. Must be present at bundle install
-# time even when the :extension_consumer_stub group is excluded — Bundler still
-# resolves the lockfile entry and fails on missing path. See EVO-1378.
+# CI-only path-gem referenced by Gemfile.lock (EVO-1378). Bundler resolves the
+# lockfile path at bundle install time, so the stub must be present before
+# bundle install runs (spec/ is only copied in full later via COPY . /app).
+COPY spec/support/extension_consumer_stub spec/support/extension_consumer_stub/
 
 # adding xz as nokogiri was failing to build libxml
 # https://github.com/evolution/evolution/issues/4045

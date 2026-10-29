@@ -27,7 +27,7 @@ services:
       - mailhog
       - sidekiq
     ports:
-      - 3000:3000
+      - 3001:3000
     env_file: .env
     environment:
       - NODE_ENV=development
@@ -54,13 +54,13 @@ services:
     image: pgvector/pgvector:pg16
     restart: always
     ports:
-      - '5432:5432'
+      - '5434:5432'
     volumes:
       - postgres:/data/postgres
     environment:
       - POSTGRES_DB=evo_community
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=
+      - POSTGRES_PASSWORD=root
 
   redis:
     image: redis:alpine
@@ -70,13 +70,133 @@ services:
     volumes:
       - redis:/data/redis
     ports:
-      - '6379:6379'
+      - '6380:6379'
 
   mailhog:
     image: mailhog/mailhog
     ports:
-      - 1025:1025
-      - 8025:8025
+      - 1026:1025
+      - 8026:8025
+
+  # --- Evo Auth Service ---
+  auth-base: &auth-base
+    build:
+      context: ../evo-auth-service-community
+      dockerfile: Dockerfile
+    env_file: ../evo-auth-service-community/.env
+    environment:
+      - RAILS_ENV=development
+      - POSTGRES_HOST=postgres-auth
+      - POSTGRES_PORT=5432
+      - REDIS_URL=redis://:auth_redis_password@redis-auth:6379/1
+
+  auth-service:
+    <<: *auth-base
+    depends_on:
+      - postgres-auth
+      - redis-auth
+    ports:
+      - '3002:3001'
+    command: ["bundle", "exec", "rails", "server", "-p", "3001", "-b", "0.0.0.0"]
+
+  auth-sidekiq:
+    <<: *auth-base
+    depends_on:
+      - postgres-auth
+      - redis-auth
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+
+  postgres-auth:
+    image: pgvector/pgvector:pg16
+    restart: always
+    ports:
+      - '5435:5432'
+    volumes:
+      - postgres-auth:/data/postgres
+    environment:
+      - POSTGRES_DB=evo_community
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=root
+
+  redis-auth:
+    image: redis:alpine
+    restart: always
+    command: ["sh", "-c", "redis-server --requirepass \"auth_redis_password\""]
+    volumes:
+      - redis-auth:/data/redis
+    ports:
+      - '6381:6379'
+
+  # --- Evo AI Processor ---
+  ai-processor:
+    build:
+      context: ../evo-ai-processor-community
+      dockerfile: Dockerfile
+    depends_on:
+      - postgres
+      - redis
+      - ai-core
+    environment:
+      POSTGRES_CONNECTION_STRING: postgresql://postgres:root@postgres:5432/evo_community
+      EVO_AUTH_BASE_URL: http://auth-service:3001
+      EVO_AI_CRM_URL: http://rails:3000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis_password
+      REDIS_SSL: "false"
+      REDIS_KEY_PREFIX: "a2a:"
+      REDIS_TTL: 3600
+      JWT_SECRET_KEY: dev_auth_encryption_key_do_not_use_in_production_32bytes
+      ENCRYPTION_KEY: XoQPOBw2FrzjQS11utERG9qO2MsAnXFxlhIns_uUxRk=
+      LOG_LEVEL: INFO
+    ports:
+      - '8000:8000'
+
+  # --- Evo Bot Runtime ---
+  bot-runtime:
+    build:
+      context: ../evo-bot-runtime
+      dockerfile: Dockerfile
+    depends_on:
+      - postgres
+      - redis
+      - ai-processor
+    environment:
+      LISTEN_ADDR: 0.0.0.0:8080
+      DATABASE_URL: postgresql://postgres:root@postgres:5432/evo_bot_runtime
+      REDIS_URL: redis://:redis_password@redis:6379/0
+      EVO_AI_PROCESSOR_URL: http://ai-processor:8000
+      EVO_AI_CRM_URL: http://rails:3000
+      JWT_SECRET_KEY: dev_auth_encryption_key_do_not_use_in_production_32bytes
+      BOT_RUNTIME_SECRET: dev_bot_runtime_secret
+    ports:
+      - '8090:8080'
+
+  # --- Evo AI Core Service ---
+  ai-core:
+    build:
+      context: ../evo-ai-core-service-community
+      dockerfile: Dockerfile
+    depends_on:
+      - postgres
+      - auth-service
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: root
+      DB_NAME: evo_community
+      DB_SSLMODE: disable
+      EVOLUTION_BASE_URL: http://rails:3000
+      EVO_AUTH_BASE_URL: http://auth-service:3001
+      AI_PROCESSOR_URL: http://ai-processor:8000
+      AI_PROCESSOR_VERSION: v1
+      JWT_SECRET_KEY: dev_secret_key_base_do_not_use_in_production_abc123
+      ENCRYPTION_KEY: XoQPOBw2FrzjQS11utERG9qO2MsAnXFxlhIns_uUxRk=
+      PORT: 5555
+    ports:
+      - '5555:5555'
+
 
 volumes:
   postgres:
@@ -84,3 +204,5 @@ volumes:
   node_modules:
   cache:
   bundle:
+  postgres-auth:
+  redis-auth:

@@ -47,8 +47,17 @@ module EvoAuthConcern
   end
 
   def set_current_user_from_auth_data(user_data, token, token_type)
-    user = find_local_user(user_data['user'])
-    raise EvoAuthService::ValidationError, 'User not found locally' unless user
+    attrs = user_data['user']
+    user = find_local_user(attrs)
+    unless user
+      # Auto-sync user from auth-service on first authentication
+      user = User.create!(
+        id: attrs['id'],
+        email: attrs['email'],
+        name: attrs['name'],
+        display_name: attrs['display_name']
+      )
+    end
 
     # Set current user
     Current.user = user
