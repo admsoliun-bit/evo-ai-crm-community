@@ -170,6 +170,7 @@ class WhatsappSyncInitiatorJob < ApplicationJob
       groupsIgnore: instance_settings['groupsIgnore'],
       alwaysOnline: instance_settings['alwaysOnline'],
       readMessages: instance_settings['readMessages'],
+      syncFullHistory: instance_settings['syncFullHistory'],
       readStatus: instance_settings['readStatus']
     }
 
@@ -191,20 +192,20 @@ class WhatsappSyncInitiatorJob < ApplicationJob
   end
 
   def webhook_events_for_sync
-    events = %w[
-      MESSAGES_UPSERT
-      MESSAGES_UPDATE
-      MESSAGES_DELETE
-    ]
-
-    # Add sync events if sync is enabled
-    events += %w[
-      MESSAGES_SET
-      CONTACTS_UPSERT
+    %w[
+      CONNECTION_UPDATE
+      CONTACTS_SET
       CONTACTS_UPDATE
+      CONTACTS_UPSERT
+      LABELS_ASSOCIATION
+      LABELS_EDIT
+      LOGOUT_INSTANCE
+      MESSAGES_DELETE
+      MESSAGES_SET
+      MESSAGES_UPDATE
+      MESSAGES_UPSERT
+      SEND_MESSAGE
     ]
-
-    events
   end
 
   # WhatsApp Cloud methods (unchanged)

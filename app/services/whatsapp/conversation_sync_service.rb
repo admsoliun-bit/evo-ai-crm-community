@@ -149,7 +149,7 @@ class Whatsapp::ConversationSyncService
     contact_inbox = inbox.contact_inboxes.find_by(source_id: phone_number)
     return contact_inbox if contact_inbox
 
-    # Create contact if not exists
+    # Create contact if not exists and return the created contact_inbox
     ::ContactInboxWithContactBuilder.new(
       source_id: phone_number,
       inbox: inbox,
@@ -160,9 +160,7 @@ class Whatsapp::ConversationSyncService
           whatsapp_history_synced: true
         }
       }
-        ).perform
-
-    contact_inbox
+    ).perform
   end
 
   def find_contact_inbox_by_phone(phone_number)

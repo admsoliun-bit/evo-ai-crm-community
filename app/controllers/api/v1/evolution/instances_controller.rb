@@ -110,35 +110,42 @@ class Api::V1::Evolution::InstancesController < Api::V1::BaseController
 
     response = http.request(request)
     Rails.logger.info "Evolution API: Get instance info response code: #{response.code}"
-    Rails.logger.info "Evolution API: Get instance info response body: #{response.body}"
 
-    if response.is_a?(Net::HTTPSuccess)
-      JSON.parse(response.body)
-    else
-      # If specific endpoint fails, return basic info
-      {
-        instance: {
-          instanceName: instance_name,
-          status: 'unknown'
-        }
-      }
+    parsed = if response.is_a?(Net::HTTPSuccess)
+               JSON.parse(response.body)
+             else
+               {}
+             end
+
+    # Normalize the response so the frontend always sees `instance.state`.
+    # The connectionState endpoint usually returns `{ instance: { state: '...' } }`;
+    # for older versions it may be `{ state: '...' }`. Build a consistent shape.
+    state = parsed.dig('instance', 'state') || parsed['state']
+    if state.blank?
+      Rails.logger.warn "Evolution API: Get instance info non-success. Status: #{response.code}"
+      state = 'unknown'
     end
-  rescue JSON::ParserError => e
-    Rails.logger.error "Evolution API: Get instance info JSON parse error: #{e.message}, Body: #{response&.body}"
-    # Return basic info on parse error
+
     {
       instance: {
         instanceName: instance_name,
-        status: 'unknown'
+        state: state
+      }
+    }
+  rescue JSON::ParserError => e
+    Rails.logger.error "Evolution API: Get instance info JSON parse error: #{e.message}"
+    {
+      instance: {
+        instanceName: instance_name,
+        state: 'unknown'
       }
     }
   rescue StandardError => e
     Rails.logger.error "Evolution API: Get instance info connection error: #{e.class} - #{e.message}"
-    # Return basic info on connection error
     {
       instance: {
         instanceName: instance_name,
-        status: 'unknown'
+        state: 'unknown'
       }
     }
   end

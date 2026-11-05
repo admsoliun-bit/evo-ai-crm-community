@@ -172,13 +172,72 @@ class Whatsapp::Providers::EvolutionService < Whatsapp::Providers::BaseService
   end
 
   def subscribe_to_webhooks
-    # Evolution API webhook subscription if needed
-    Rails.logger.info 'Evolution API webhook subscription not implemented'
+    return unless whatsapp_channel.provider == 'evolution'
+
+    instance_name = whatsapp_channel.provider_config['instance_name'].presence ||
+                    whatsapp_channel.provider_config['instanceName'].presence
+    return if instance_name.blank?
+
+    api_url = api_base_path
+    api_hash = api_headers['apikey']
+    return if api_url.blank? || api_hash.blank?
+
+    backend_url = ENV['BACKEND_URL'].presence ||
+                  GlobalConfigService.load('BACKEND_URL', nil).to_s.strip.presence
+    return if backend_url.blank?
+
+    webhook_url_value = "#{backend_url.chomp('/')}/webhooks/whatsapp/evolution"
+
+    Rails.logger.info "[EVOLUTION] Subscribing webhooks for instance #{instance_name} to #{webhook_url_value}"
+
+    response = HTTParty.post(
+      "#{api_url}/webhook/set/#{instance_name}",
+      headers: {
+        'Content-Type' => 'application/json',
+        'apikey' => api_hash
+      },
+      body: {
+        url: webhook_url_value,
+        webhook_events: webhook_events_for_subscription
+      }.to_json,
+      timeout: 30
+    )
+
+    Rails.logger.info "[EVOLUTION] Webhook subscription response: #{response.code}"
+    response.success?
+  rescue StandardError => e
+    Rails.logger.error "[EVOLUTION] Webhook subscription error: #{e.message}"
+    false
   end
 
   def unsubscribe_from_webhooks
-    # Evolution API webhook unsubscription if needed
-    Rails.logger.info 'Evolution API webhook unsubscription not implemented'
+    return unless whatsapp_channel.provider == 'evolution'
+
+    instance_name = whatsapp_channel.provider_config['instance_name'].presence ||
+                    whatsapp_channel.provider_config['instanceName'].presence
+    return if instance_name.blank?
+
+    api_url = api_base_path
+    api_hash = api_headers['apikey']
+    return if api_url.blank? || api_hash.blank?
+
+    Rails.logger.info "[EVOLUTION] Removing webhooks for instance #{instance_name}"
+
+    response = HTTParty.post(
+      "#{api_url}/webhook/set/#{instance_name}",
+      headers: {
+        'Content-Type' => 'application/json',
+        'apikey' => api_hash
+      },
+      body: { url: '', webhook_events: [] }.to_json,
+      timeout: 30
+    )
+
+    Rails.logger.info "[EVOLUTION] Webhook removal response: #{response.code}"
+    response.success?
+  rescue StandardError => e
+    Rails.logger.error "[EVOLUTION] Webhook removal error: #{e.message}"
+    false
   end
 
   def disconnect_channel_provider
@@ -235,6 +294,20 @@ class Whatsapp::Providers::EvolutionService < Whatsapp::Providers::BaseService
   rescue StandardError => e
     Rails.logger.error "Evolution API: fetchProfilePictureUrl error: #{e.class} - #{e.message}"
     nil
+  end
+
+  def webhook_events_for_subscription
+    %w[
+      CONNECTION_UPDATE
+      CONTACTS_SET
+      CONTACTS_UPDATE
+      CONTACTS_UPSERT
+      MESSAGES_DELETE
+      MESSAGES_SET
+      MESSAGES_UPDATE
+      MESSAGES_UPSERT
+      SEND_MESSAGE
+    ]
   end
 
   private

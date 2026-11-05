@@ -60,12 +60,17 @@ class WhatsappSyncListener < BaseListener
   end
 
   def evolution_sync_enabled?(provider_config)
-    # For Evolution, sync is enabled if explicitly configured
-    provider_config['enable_sync_features'] == true
+    # For Evolution, sync is enabled if explicitly configured either at the
+    # provider_config root (legacy/whisper flow) or inside instance_settings
+    # (normal frontend creation flow).
+    provider_config['enable_sync_features'] == true ||
+      provider_config.dig('instance_settings', 'enable_sync_features') == true
   end
 
   def evolution_go_sync_enabled?(provider_config)
-    # For Evolution Go, sync is enabled if explicitly configured
-    provider_config['enable_sync_features'] == true
+    # For Evolution Go, sync is enabled if explicitly configured either at the
+    # provider_config root or inside instance_settings.
+    provider_config['enable_sync_features'] == true ||
+      provider_config.dig('instance_settings', 'enable_sync_features') == true
   end
 end

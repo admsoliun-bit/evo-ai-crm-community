@@ -18,7 +18,7 @@ class Webhooks::WhatsappController < ActionController::API
   end
 
   def process_evolution_go_payload
-    Rails.logger.info "Evolution Go webhook received: #{params.slice(:event, :instanceId, :instanceToken)}"
+    Rails.logger.info "Evolution Go webhook received: event=#{params[:event]}, instance=#{params[:instanceId]}"
 
     # Evolution Go webhook structure validation
     unless valid_evolution_go_payload?
@@ -28,7 +28,8 @@ class Webhooks::WhatsappController < ActionController::API
     end
 
     # Process Evolution Go webhook
-    Webhooks::WhatsappEventsJob.perform_later(params.to_unsafe_hash.merge(evolution_go: true))
+    payload = params.to_unsafe_hash.merge(evolution_go: true)
+    Webhooks::WhatsappEventsJob.perform_later(payload)
     head :ok
   end
 
@@ -46,7 +47,8 @@ class Webhooks::WhatsappController < ActionController::API
     perform_sync if params[:awaitResponse].present?
     return if performed?
 
-    Webhooks::WhatsappEventsJob.perform_later(params.to_unsafe_hash)
+    payload = params.to_unsafe_hash
+    Webhooks::WhatsappEventsJob.perform_later(payload)
     head :ok
   end
 
@@ -103,16 +105,16 @@ class Webhooks::WhatsappController < ActionController::API
   end
 
   def log_global_token_check(token, global_verify_token)
-    token.present? ? '[PRESENT]' : '[MISSING]'
-    global_verify_token.present? ? '[PRESENT]' : '[MISSING]'
+    token_status = token.present? ? '[PRESENT]' : '[MISSING]'
+    global_status = global_verify_token.present? ? '[PRESENT]' : '[MISSING]'
 
     Rails.logger.info 'Global WhatsApp webhook verify token check: ' \
                       "provided=#{token_status}, global=#{global_status}"
   end
 
   def log_phone_specific_token_check(token, whatsapp_webhook_verify_token)
-    token.present? ? '[PRESENT]' : '[MISSING]'
-    whatsapp_webhook_verify_token.present? ? '[PRESENT]' : '[MISSING]'
+    token_status = token.present? ? '[PRESENT]' : '[MISSING]'
+    channel_status = whatsapp_webhook_verify_token.present? ? '[PRESENT]' : '[MISSING]'
 
     Rails.logger.info 'Phone-specific WhatsApp webhook verify token check ' \
                       "for #{params[:phone_number]}: provided=#{token_status}, " \

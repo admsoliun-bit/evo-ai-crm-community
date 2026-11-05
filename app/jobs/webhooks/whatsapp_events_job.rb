@@ -2,10 +2,10 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
   queue_as :low
 
   def perform(params = {})
-    Rails.logger.info "WhatsApp webhook processing started: #{params.inspect}"
+    Rails.logger.info "WhatsApp webhook processing started: #{safe_params_for_log(params)}"
 
     channel = find_channel(params)
-    if channel_is_inactive?(channel)
+    if channel_is_inactive?(channel, params)
       Rails.logger.warn("Inactive WhatsApp channel: #{channel&.phone_number || "unknown - #{params[:phone_number]}"}")
       return
     end
@@ -343,8 +343,8 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
   end
 
   def find_channel(params)
-    # Log detailed params for debugging
-    Rails.logger.info "WhatsApp webhook channel search started with params: #{params.slice(:event, :instance, :phone_number, :server_url, :object)}"
+    # Log limited params for debugging
+    Rails.logger.info "WhatsApp webhook channel search started with params: #{safe_params_for_log(params)}"
 
     channel = try_find_channel_from_business_payload(params) ||
               try_find_channel_by_phone_number_id(params) ||
@@ -408,7 +408,7 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
       end
     end
 
-    Rails.logger.info "Channel search: no channel found for params #{params.slice(:phone_number, :instance, :event, :instanceId)}"
+    Rails.logger.info "Channel search: no channel found for params #{safe_params_for_log(params)}"
     nil
   end
 
@@ -492,7 +492,7 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
     if channel
       Rails.logger.info "✅ Channel found: #{channel.phone_number} (provider: #{channel.provider}, inbox: #{channel.inbox.name})"
     else
-      Rails.logger.warn "❌ No channel found for webhook params: #{params.slice(:event, :instance, :phone_number, :server_url, :object)}"
+      Rails.logger.warn "❌ No channel found for webhook params: #{safe_params_for_log(params)}"
 
       # Additional debugging for Evolution API
       if params[:instance].present?
@@ -504,11 +504,38 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
     end
   end
 
-  def channel_is_inactive?(channel)
+  def channel_is_inactive?(channel, params = {})
     return true if channel.blank?
+
+    # Connection lifecycle events must always be processed so that a reconnected
+    # instance can clear stale reauthorization flags. Otherwise the channel would
+    # stay blocked forever after a temporary disconnection.
+    return false if lifecycle_event?(params)
+
     return true if channel.reauthorization_required?
 
     false
+  end
+
+  def lifecycle_event?(params)
+    event = params[:event].to_s
+
+    # Evolution lifecycle events
+    return true if event.in?(%w[connection.update logout.instance])
+
+    # WhatsApp Cloud lifecycle/account events
+    field = params.dig(:entry, 0, :changes, 0, :field).to_s
+    return true if field.in?(%w[account_update user_id_update])
+
+    false
+  end
+
+  def safe_params_for_log(params)
+    params.slice(:event, :instance, :phone_number, :server_url, :object, :instanceId).tap do |safe|
+      safe.delete(:data) if safe.key?(:data)
+      safe.delete(:messages) if safe.key?(:messages)
+      safe.delete(:entry) if safe.key?(:entry)
+    end
   end
 
   def find_channel_from_whatsapp_business_payload(params)

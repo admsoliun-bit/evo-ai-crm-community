@@ -121,6 +121,7 @@ class Api::V1::Evolution::AuthorizationsController < Api::V1::BaseController
       'LABELS_EDIT',           # Label edits
       'LOGOUT_INSTANCE',       # Instance logout events
       'MESSAGES_DELETE',       # Message deletions
+      'MESSAGES_SET',          # Historical message sync
       'MESSAGES_UPDATE',       # Message updates (read status, etc)
       'MESSAGES_UPSERT',       # New incoming messages
       'SEND_MESSAGE'           # Sent message events
@@ -344,7 +345,8 @@ class Api::V1::Evolution::AuthorizationsController < Api::V1::BaseController
       groupsIgnore: instance_settings['groupsIgnore'],
       alwaysOnline: instance_settings['alwaysOnline'],
       readMessages: instance_settings['readMessages'],
-      readStatus: instance_settings['readStatus']
+      readStatus: instance_settings['readStatus'],
+      syncFullHistory: instance_settings['syncFullHistory']
     }
 
     Rails.logger.info "[EVOLUTION] Setting instance configuration for #{instance_name}"

@@ -42,6 +42,8 @@ class Channel::Whatsapp < ApplicationRecord
   # subscribed_apps call, so the number stays disconnected from webhooks.
   after_update_commit :subscribe,
                       if: -> { provider == 'whatsapp_cloud' && saved_change_to_provider_config? }
+  after_update_commit :resubscribe_evolution,
+                      if: -> { provider.in?(%w[evolution evolution_go]) && saved_change_to_provider_config? }
   after_create :sync_templates
   before_destroy :unsubscribe
 
@@ -178,6 +180,12 @@ class Channel::Whatsapp < ApplicationRecord
   rescue StandardError => e
     Rails.logger.error "WhatsApp subscribed_apps error: #{e.inspect}"
     true
+  end
+
+  def resubscribe_evolution
+    provider_service.subscribe_to_webhooks
+  rescue StandardError => e
+    Rails.logger.error "Evolution resubscribe error for channel #{id}: #{e.message}"
   end
 
   def unsubscribe
