@@ -12,6 +12,13 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
 
     Rails.logger.info "Found WhatsApp channel: #{channel.phone_number} (provider: #{channel.provider})"
 
+    # Handle lifecycle events first so reconnections can clear stale
+    # reauthorization flags before any message/sync processing.
+    if lifecycle_event?(params)
+      handle_lifecycle_events(channel, params)
+      return
+    end
+
     # Handle different webhook event types
     if sync_event?(params)
       handle_sync_events(channel, params)
@@ -48,6 +55,54 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
       handle_evolution_sync_events(channel, params)
     else
       Rails.logger.warn "Unknown provider for sync events: #{channel.provider}"
+    end
+  end
+
+  def handle_lifecycle_events(channel, params)
+    event = params[:event].to_s
+
+    case event
+    when 'connection.update'
+      handle_connection_update(channel, params)
+    when 'logout.instance'
+      Rails.logger.warn "[EVOLUTION] Instance #{params[:instance]} logged out"
+      channel.authorization_error! if channel.respond_to?(:authorization_error!)
+    else
+      # WhatsApp Cloud account lifecycle is handled below
+      handle_account_update(channel, params) if params.dig(:entry, 0, :changes, 0, :field).to_s == 'account_update'
+      handle_user_id_update(channel, params) if params.dig(:entry, 0, :changes, 0, :field).to_s == 'user_id_update'
+    end
+  end
+
+  def handle_connection_update(channel, params)
+    state = params.dig(:data, :state).to_s
+    status_reason = params.dig(:data, :statusReason)
+
+    Rails.logger.info "[EVOLUTION] Connection update for #{channel.phone_number}: state=#{state}, statusReason=#{status_reason}"
+
+    # Persist latest connection state for dashboard visibility
+    connection_data = (channel.provider_connection || {}).merge(
+      'connection' => {
+        'state' => state,
+        'statusReason' => status_reason,
+        'updatedAt' => Time.current.iso8601
+      }
+    )
+    channel.update_provider_connection!(connection_data)
+
+    case state
+    when 'open'
+      # WhatsApp is online again — clear any stale reauthorization flags
+      if channel.reauthorization_required?
+        channel.reauthorized!
+        Rails.logger.info "[EVOLUTION] Channel #{channel.phone_number} reauthorized after connection.open"
+      end
+    when 'close'
+      # Treat persistent disconnects as an auth error so the UI prompts reconnection.
+      # statusReason 428/440 indicate the phone/device is no longer paired.
+      if [428, 440, 401, 403].include?(status_reason.to_i)
+        channel.authorization_error! if channel.respond_to?(:authorization_error!)
+      end
     end
   end
 
